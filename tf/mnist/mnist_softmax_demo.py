@@ -6,7 +6,7 @@ File : mnist_st_demo.py
 mnist 训练demo
 使用 单层感知机softmax
 
-参考：https://github.com/dufy29/ai-frame/blob/main/pytorch/tensor_basics.py
+参考：https://github.com/PnYuan/Practice-of-Machine-Learning/blob/master/code/MNIST_tensorflow_demo/softmax_demo.py
 ==============================================================================
 """
 
