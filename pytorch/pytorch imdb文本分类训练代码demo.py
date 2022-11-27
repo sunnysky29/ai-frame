@@ -13,7 +13,7 @@ File : pytorch 训练代码demo.py
 - 1)https://blog.csdn.net/scar2016/article/details/124404318
 - 2) [哔站：32、基于PyTorch的文本分类项目模型与训练代码讲解](https://www.bilibili.com/video/BV1eD4y1F7o4/?spm_id_from=333.788&vd_source=abeb4ad4122e4eff23d97059cf088ab4)
 - 3) [关于Pytorch中的Embedding padding](http://www.linzehui.me/2018/08/19/%E7%A2%8E%E7%89%87%E7%9F%A5%E8%AF%86/%E5%85%B3%E4%BA%8EPytorch%E4%B8%ADEmbedding%E7%9A%84padding/)
-
+- 4） IMDB 数据集链接：http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz
 ==============================================================================
 """
 
@@ -120,7 +120,7 @@ class TextClassificationModel(nn.Module):
 # step2 构建IMDB DataLoader
 
 BATCH_SIZE = 64
-
+data_path = r'/Users/dufy/code/corpus/txt_classification'
 
 # dataset里面的数据分词化
 def yield_tokens(train_data_iter, tokenizer):
@@ -130,7 +130,7 @@ def yield_tokens(train_data_iter, tokenizer):
         yield tokenizer(comment)
 
 # 得到dataset类型对象
-train_data_iter = IMDB(root='.data', split='train') # Dataset类型的对象
+train_data_iter = IMDB(root=data_path, split='train') # Dataset类型的对象
 
 # 实例化一个分词器
 tokenizer = get_tokenizer("basic_english")
@@ -181,6 +181,7 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
         start_step = checkpoint['step']
+        print(f'接着从step {start_step} 开始训练')
 
     for epoch_index in range(start_epoch, num_epoch):
         ema_loss = 0.
@@ -227,6 +228,7 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
 
                 # logging.warning(f"eval_ema_loss: {ema_eval_loss.item()}, eval_acc: {acc.item()}")
                 model.train()
+        print(f'-----------step: {step}')
 
 
 # step4 测试代码
@@ -236,12 +238,15 @@ if __name__ == "__main__":
     print("模型总参数:", sum(p.numel() for p in model.parameters()))
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    train_data_iter = IMDB(root='.data', split='train') # Dataset类型的对象
+    train_data_iter = IMDB(root=data_path, split='train') # Dataset类型的对象
     train_data_loader = torch.utils.data.DataLoader(to_map_style_dataset(train_data_iter), batch_size=BATCH_SIZE, collate_fn=collate_fn, shuffle=True)
 
-    eval_data_iter = IMDB(root='.data', split='test') # Dataset类型的对象
+    eval_data_iter = IMDB(root=data_path, split='test') # Dataset类型的对象
     eval_data_loader = torch.utils.data.DataLoader(to_map_style_dataset(eval_data_iter), batch_size=8, collate_fn=collate_fn)
     resume = ""
+    # resume = r"../data/logs_imdb_text_classification/step_500.pt"  # 加载 check_point
 
-    train(train_data_loader, eval_data_loader, model, optimizer, num_epoch=10, log_step_interval=20, save_step_interval=500, eval_step_interval=300, save_path="./logs_imdb_text_classification", resume=resume)
+    train(train_data_loader, eval_data_loader, model, optimizer,
+          num_epoch=10, log_step_interval=20, save_step_interval=500,
+          eval_step_interval=300, save_path="../data/logs_imdb_text_classification", resume=resume)
 

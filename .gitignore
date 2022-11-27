@@ -131,3 +131,5 @@ dmypy.json
 .idea/
 .ipynb_checkpoints/
 /data/datasets
+/data/logs_imdb_text_classification
+/pytorch/.data/datasets/IMDB/
