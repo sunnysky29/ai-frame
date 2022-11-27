@@ -10,6 +10,9 @@ File : pytorch 训练代码 GPU 版本demo.py
 # Last Modified Date: 06.01.2022
 # Last Modified By  : admin <admin>
 
+运行(2卡为例)： python -m torch.distributed.launch --nproc_per_node=n_gpus xxx.py
+             python -m torch.distributed.launch --nproc_per_node=2 xxx.py
+
 - 1)https://blog.csdn.net/scar2016/article/details/124404318
 - 2) [哔站：33、完整讲解PyTorch多GPU分布式训练代码编写](https://www.bilibili.com/video/BV1xZ4y1S7dG/?spm_id_from=pageDriver&vd_source=abeb4ad4122e4eff23d97059cf088ab4)
 - 3) [关于Pytorch中的Embedding padding](http://www.linzehui.me/2018/08/19/%E7%A2%8E%E7%89%87%E7%9F%A5%E8%AF%86/%E5%85%B3%E4%BA%8EPytorch%E4%B8%ADEmbedding%E7%9A%84padding/)
@@ -17,7 +20,7 @@ File : pytorch 训练代码 GPU 版本demo.py
 ==============================================================================
 """
 
-
+import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -167,7 +170,7 @@ def collate_fn(batch):
 
 
 # step3 编写训练代码
-def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_step_interval, save_step_interval, eval_step_interval, save_path, resume=""):
+def train(local_rank, train_data_set, eval_data_set, model, optimizer, num_epoch, log_step_interval, save_step_interval, eval_step_interval, save_path, resume=""):
     """ 此处data_loader是map-style dataset """
     start_epoch = 0
     start_step = 0
@@ -186,13 +189,23 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
         start_step = checkpoint['step']
         print(f'接着从step {start_step} 开始训练')
 # ==================================================
-#     model.cuda()  # 模型拷贝
-    nn.DataParallel(model.cuda(), device_ids=[0,1])  # 模型拷贝, 放入 DataParallel()
+    model = nn.parallel.DistributedDataParallel(model.cuda(local_rank),
+                                                device_ids=[local_rank])  # 模型拷贝, 放入 DistributedDataParallel()
+    train_sampler = DistributedSampler(train_data_set)
+    train_data_loader = torch.utils.data.DataLoader(train_data_set, batch_size=BATCH_SIZE,
+                                                    collate_fn=collate_fn, sampler=train_sampler)
+    eval_data_loader = torch.utils.data.DataLoader(eval_data_set, batch_size=8,
+                                                    collate_fn=collate_fn)
+
 # ==================================================
 
     for epoch_index in range(start_epoch, num_epoch):
         ema_loss = 0.
         num_batches = len(train_data_loader)
+
+        # ==================================================
+        train_sampler.set_epoch(epoch_index)  # 为了让每张卡在每个周期中得到的数据是随机的
+        # ==================================================
 
         for batch_index, (target, token_index) in enumerate(train_data_loader):
             optimizer.zero_grad()
@@ -200,8 +213,8 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
             # 数据拷贝==================================================
             # TORCH.TENSOR.CUDA()
             # Returns a copy of this object in CUDA memory
-            token_index = token_index.cuda()
-            target = target.cuda()
+            token_index = token_index.cuda(local_rank)
+            target = target.cuda(local_rank)
             # ==================================================
             logits = model(token_index)
             bce_loss = F.binary_cross_entropy(torch.sigmoid(logits), F.one_hot(target, num_classes=2).to(torch.float32))
@@ -213,7 +226,7 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
             if step % log_step_interval == 0:
                 logging.warning(f"epoch_index: {epoch_index}, batch_index: {batch_index}, ema_loss: {ema_loss.item()}")
 
-            if step % save_step_interval == 0:
+            if step % save_step_interval == 0 and local_rank== 0:
                 os.makedirs(save_path, exist_ok=True)
                 save_file = os.path.join(save_path, f"step_{step}.pt")
                 torch.save({
@@ -247,12 +260,11 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
 
 # step4 测试代码
 if __name__ == "__main__":
-    # 单机单卡
-    # if torch.cuda.is_available():
-    #     logging.warning(f'Cuda is available')
-    #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置可使用的卡
-    # else:
-    #     logging.warning(f'Cuda is not available ! Exit')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank',
+                        type=int,
+                        help='local device id on current node')
+    args = parser.parse_args()
 
     # 单机多卡
     if torch.cuda.is_available():
@@ -263,6 +275,10 @@ if __name__ == "__main__":
             logging.warning('Too few gpus!!')
     else:
         logging.warning(f'Cuda is not available ! Exit')
+
+    n_gpus =2
+    torch.distributed.init_process_group("nccl", world_size=n_gpus, rank=args.local_rank)
+    torch.cuda.set_device(args.local_rank)
 
     # model = GCNN()
     model = TextClassificationModel()
@@ -277,7 +293,8 @@ if __name__ == "__main__":
     resume = ""
     # resume = r"../data/logs_imdb_text_classification/step_500.pt"  # 加载 check_point
 
-    train(train_data_loader, eval_data_loader, model, optimizer,
+    train(args.local_rank, to_map_style_dataset(train_data_iter), to_map_style_dataset(eval_data_iter),
+          model, optimizer,
           num_epoch=10, log_step_interval=20, save_step_interval=500,
           eval_step_interval=300, save_path="../data/logs_imdb_text_classification", resume=resume)
 
