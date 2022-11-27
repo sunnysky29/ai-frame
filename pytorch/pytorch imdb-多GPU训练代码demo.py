@@ -176,12 +176,19 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
     if resume != "":
         #  加载之前训过的模型的参数文件
         logging.warning(f"loading from {resume}")
-        checkpoint = torch.load(resume)
+        # ==================================================
+        # 可以是  cpu, cuda, cuda:index
+        checkpoint = torch.load(resume, map_location=torch.device("cpu"))
+        # ==================================================
+
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
         start_step = checkpoint['step']
         print(f'接着从step {start_step} 开始训练')
+# ==================================================
+    model.cuda()  # 模型拷贝
+# ==================================================
 
     for epoch_index in range(start_epoch, num_epoch):
         ema_loss = 0.
@@ -190,6 +197,12 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
         for batch_index, (target, token_index) in enumerate(train_data_loader):
             optimizer.zero_grad()
             step = num_batches*(epoch_index) + batch_index + 1
+            # 数据拷贝==================================================
+            # TORCH.TENSOR.CUDA()
+            # Returns a copy of this object in CUDA memory
+            token_index = token_index.cuda()
+            target = target.cuda()
+            # ==================================================
             logits = model(token_index)
             bce_loss = F.binary_cross_entropy(torch.sigmoid(logits), F.one_hot(target, num_classes=2).to(torch.float32))
             ema_loss = 0.9*ema_loss + 0.1*bce_loss
