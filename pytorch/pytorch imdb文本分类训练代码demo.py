@@ -2,7 +2,7 @@
 """
 ==============================================================================
 Time : 2022/11/26 22:41
-File : pytorch 训练代码demo.py
+File : pytorch 训练代码demo.py, cpu版本
 
 # File              : gcn_imdb_sentence_classification.py
 # Author            : admin <admin>
