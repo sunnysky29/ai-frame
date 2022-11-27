@@ -116,10 +116,8 @@ class TextClassificationModel(nn.Module):
         return self.fc(embedded)
 
 
-
 # step2 构建IMDB DataLoader
-
-BATCH_SIZE = 64
+BATCH_SIZE = 64 * 2 # 2张卡
 data_path = r'/Users/dufy/code/corpus/txt_classification'
 
 # dataset里面的数据分词化
@@ -178,7 +176,8 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
         logging.warning(f"loading from {resume}")
         # ==================================================
         # 可以是  cpu, cuda, cuda:index
-        checkpoint = torch.load(resume, map_location=torch.device("cpu"))
+        # checkpoint = torch.load(resume, map_location=torch.device("cpu"))
+        checkpoint = torch.load(resume, map_location=torch.device("cuda:0"))
         # ==================================================
 
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -187,7 +186,8 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
         start_step = checkpoint['step']
         print(f'接着从step {start_step} 开始训练')
 # ==================================================
-    model.cuda()  # 模型拷贝
+#     model.cuda()  # 模型拷贝
+    nn.DataParallel(model.cuda(), device_ids=[0,1])  # 模型拷贝, 放入 DataParallel()
 # ==================================================
 
     for epoch_index in range(start_epoch, num_epoch):
@@ -219,7 +219,8 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
                 torch.save({
                     'epoch': epoch_index,
                     'step': step,
-                    'model_state_dict': model.state_dict(),
+                    # 'model_state_dict': model.state_dict(),
+                    'model_state_dict': model.module.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': bce_loss,
                 }, save_file)
@@ -246,9 +247,20 @@ def train(train_data_loader, eval_data_loader, model, optimizer, num_epoch, log_
 
 # step4 测试代码
 if __name__ == "__main__":
+    # 单机单卡
+    # if torch.cuda.is_available():
+    #     logging.warning(f'Cuda is available')
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置可使用的卡
+    # else:
+    #     logging.warning(f'Cuda is not available ! Exit')
+
+    # 单机多卡
     if torch.cuda.is_available():
         logging.warning(f'Cuda is available')
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置可使用的卡
+        if torch.cuda.device_count() > 1:
+            logging.warning(f'Find {torch.cuda.device_count()} gpus!')
+        else:
+            logging.warning('Too few gpus!!')
     else:
         logging.warning(f'Cuda is not available ! Exit')
 
